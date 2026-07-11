@@ -5,6 +5,7 @@ from backend.services.quality_checker import QualityChecker
 from backend.database import Database
 from backend.utils.file_handlers import FileHandler
 import os
+import traceback
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -45,7 +46,9 @@ def analyze_dataset(dataset_id: str, last_update_timestamp: Optional[str] = None
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        tb = traceback.format_exc()
+        print(f"ERROR in analyze_dataset: {tb}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}\n{tb}")
 
 @router.post("/datasets/{dataset_id}/re-analyze")
 def reanalyze_dataset(dataset_id: str):

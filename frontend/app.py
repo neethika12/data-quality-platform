@@ -1,6 +1,11 @@
 import streamlit as st
 import requests
 from datetime import datetime
+import sys
+import os
+
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Page config
 st.set_page_config(
@@ -76,25 +81,25 @@ with st.sidebar:
 
 # Route to pages based on selection
 if menu_selection == "Dashboard":
-    from frontend.pages import dashboard
+    from pages import dashboard
     dashboard.render()
 
 elif menu_selection == "Data Explorer":
-    from frontend.pages import data_explorer
+    from pages import data_explorer
     data_explorer.render()
 
 elif menu_selection == "Drift Analysis":
-    from frontend.pages import drift_analysis
+    from pages import drift_analysis
     drift_analysis.render()
 
 elif menu_selection == "Quality Metrics":
-    from frontend.pages import quality_metrics
+    from pages import quality_metrics
     quality_metrics.render()
 
 elif menu_selection == "Alerts":
-    from frontend.pages import alerts
+    from pages import alerts
     alerts.render()
 
 elif menu_selection == "Configure":
-    from frontend.pages import configure
+    from pages import configure
     configure.render()

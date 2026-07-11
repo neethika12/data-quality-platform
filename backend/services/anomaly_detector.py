@@ -20,10 +20,11 @@ class AnomalyDetector:
     def check_nulls(self, df: pd.DataFrame) -> Dict[str, Dict]:
         """Analyze null values per column."""
         null_analysis = {}
+        df_len = int(len(df))
 
         for col in df.columns:
             null_count = int(df[col].isna().sum())
-            null_rate = null_count / len(df)
+            null_rate = float(null_count) / float(df_len)
 
             # Determine status
             status = "OK"
@@ -43,9 +44,11 @@ class AnomalyDetector:
     def detect_outliers(self, df: pd.DataFrame, method: str = "iqr") -> Dict[str, Dict]:
         """Detect outliers using IQR or Z-score method."""
         outliers = {}
+        df_len = int(len(df))
 
         for col in df.columns:
-            if not pd.api.types.is_numeric_dtype(df[col]):
+            # Skip non-numeric and boolean columns
+            if not pd.api.types.is_numeric_dtype(df[col]) or pd.api.types.is_bool_dtype(df[col]):
                 continue
 
             if method == "iqr":
@@ -57,11 +60,12 @@ class AnomalyDetector:
                 continue
 
             if len(indices) > 0:
+                outlier_count = int(len(indices))
                 outliers[col] = {
-                    "outlier_count": int(len(indices)),
+                    "outlier_count": outlier_count,
                     "method": method,
                     "indices": indices.tolist()[:100],  # Limit to first 100
-                    "percentage": float(len(indices) / len(df) * 100),
+                    "percentage": float(outlier_count) / float(df_len) * 100.0,
                     "stats": stats_dict
                 }
 
@@ -87,25 +91,26 @@ class AnomalyDetector:
             violation_count = 0
 
             if rule_type == "negative_values" and pd.api.types.is_numeric_dtype(col):
-                violation_count = (col < 0).sum()
+                violation_count = int((col < 0).sum())
 
             elif rule_type == "future_dates":
                 try:
                     col_dt = pd.to_datetime(col, errors='coerce')
-                    violation_count = (col_dt > pd.Timestamp.now()).sum()
+                    violation_count = int((col_dt > pd.Timestamp.now()).sum())
                 except:
                     pass
 
             elif rule_type == "null_values":
-                violation_count = col.isna().sum()
+                violation_count = int(col.isna().sum())
 
             elif rule_type == "custom" and "validator" in rule:
-                violation_count = rule["validator"](col)
+                violation_count = int(rule["validator"](col))
 
             if violation_count > 0:
+                df_len = int(len(df))
                 violations[rule_name or f"{rule_type}_{column}"] = {
-                    "count": int(violation_count),
-                    "percentage": float(violation_count / len(df) * 100),
+                    "count": violation_count,
+                    "percentage": float(violation_count / df_len * 100),
                     "severity": rule.get("severity", "WARNING")
                 }
 
@@ -117,12 +122,13 @@ class AnomalyDetector:
         outliers = self.detect_outliers(df)
 
         # Count total anomalies
-        total_anomalies = 0
-        total_anomalies += sum(a["null_count"] for a in null_analysis.values())
-        total_anomalies += sum(o["outlier_count"] for o in outliers.values())
+        total_anomalies = int(sum(a["null_count"] for a in null_analysis.values()))
+        total_anomalies += int(sum(o["outlier_count"] for o in outliers.values()))
 
         # Calculate anomaly score
-        anomaly_score = min(1.0, total_anomalies / (len(df) * len(df.columns)))
+        df_len = int(len(df))
+        df_cols = int(len(df.columns))
+        anomaly_score = float(min(1.0, float(total_anomalies) / float(df_len * df_cols)))
 
         return {
             "null_analysis": {
