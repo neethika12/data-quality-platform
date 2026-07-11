@@ -75,7 +75,7 @@ with st.sidebar:
 
     menu_selection = st.radio(
         "Select Page",
-        options=["Dashboard", "Data Explorer", "Drift Analysis", "Quality Metrics", "Alerts", "Configure"],
+        options=["Dashboard", "Data Explorer", "Drift Analysis", "Quality Metrics", "Alerts", "Metrics Trends", "Comparison", "Reports", "Configure"],
         label_visibility="collapsed"
     )
 
@@ -99,6 +99,18 @@ elif menu_selection == "Quality Metrics":
 elif menu_selection == "Alerts":
     from pages import alerts
     alerts.render()
+
+elif menu_selection == "Metrics Trends":
+    from pages import metrics_trends
+    metrics_trends.render()
+
+elif menu_selection == "Comparison":
+    from pages import comparison
+    comparison.render()
+
+elif menu_selection == "Reports":
+    from pages import reports
+    reports.render()
 
 elif menu_selection == "Configure":
     from pages import configure
