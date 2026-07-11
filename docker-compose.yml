@@ -21,21 +21,17 @@ services:
 
   frontend:
     build:
-      context: .
+      context: ./frontend-react
       dockerfile: Dockerfile
     container_name: dq-frontend
     ports:
-      - "8501:8501"
+      - "3000:3000"
     volumes:
-      - ./frontend:/app/frontend
-      - ./backend:/app/backend
-    command: streamlit run frontend/app.py --server.port=8501 --server.address=0.0.0.0
+      - ./frontend-react/src:/app/src
     depends_on:
       - backend
     networks:
       - dq-network
-    environment:
-      - STREAMLIT_SERVER_HEADLESS=true
 
 networks:
   dq-network:

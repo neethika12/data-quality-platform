@@ -34,13 +34,11 @@ Data quality issues break ML pipelines and corrupt analytics. This platform catc
          │
          ▼
 ┌──────────────────────────────────────┐
-│  Frontend (Streamlit)                │
-│  ├─ Dashboard                        │
-│  ├─ Data Explorer                    │
-│  ├─ Drift Analysis                   │
-│  ├─ Quality Metrics                  │
-│  ├─ Alert Management                 │
-│  └─ Configuration                    │
+│  Frontend (React + Tailwind)         │
+│  ├─ Home (upload, run check, results)│
+│  ├─ Alerts                           │
+│  ├─ Reports                          │
+│  └─ Settings                         │
 └──────────────────────────────────────┘
 ```
 
@@ -80,10 +78,12 @@ Data quality issues break ML pipelines and corrupt analytics. This platform catc
 
 5. **Start Frontend (Terminal 2):**
    ```bash
-   streamlit run frontend/app.py
+   cd frontend-react
+   npm install
+   npm run dev
    ```
    
-   Frontend available at: `http://localhost:8501`
+   Frontend available at: `http://localhost:3000`
 
 ### Option 2: Docker (Recommended for Production)
 
@@ -99,7 +99,7 @@ docker-compose up
 
 Then:
 - **Backend API**: http://localhost:8000/docs
-- **Frontend**: http://localhost:8501
+- **Frontend**: http://localhost:3000
 
 ## 📊 Features
 
@@ -127,27 +127,24 @@ Then:
 
 ### Frontend Pages
 
-1. **Dashboard** - KPI cards, quality score, recent alerts
-2. **Data Explorer** - Upload datasets, browse, preview
-3. **Drift Analysis** - Feature drift scores, statistical tests
-4. **Quality Metrics** - Null rates, completeness, anomalies
-5. **Alerts** - Alert log, filtering, acknowledgment
-6. **Configure** - Set thresholds, view settings
+1. **Home** - Upload a file, run a check, and see the quality score, plain-English breakdown, and an expandable technical view (schema changes, drift scores, per-column anomalies)
+2. **Alerts** - Alert log, filtering, acknowledgment
+3. **Reports** - Download a text/JSON quality report
+4. **Settings** - View thresholds and alert configuration
 
 ## 🚀 Example Usage
 
 ### 1. Upload Dataset
-- Go to **Data Explorer** → Upload CSV file
-- System establishes baseline (schema, distributions)
+- Go to **Home** → Upload a CSV/Excel/Parquet file
+- System establishes a baseline (schema, distributions, a raw data sample for drift comparison)
 
-### 2. Run Analysis
-- Click **"Run Quality Analysis"** on Dashboard
+### 2. Run a Check
+- Click **"Run Check"** on Home
 - Backend performs checks (30 sec for 100k rows)
 
 ### 3. View Results
-- See quality score, drift, anomalies on Dashboard
-- Drill into **Drift Analysis** for feature-level details
-- Check **Quality Metrics** for null rates and completeness
+- See the quality score and plain-English summary right on Home
+- Expand **"Show detailed technical breakdown"** for drift scores, schema changes, and per-column stats
 - Review **Alerts** for actionable issues
 
 ## 📈 Sample Output
@@ -209,9 +206,9 @@ data-quality-platform/
 │   ├── database.py             # SQLite ORM
 │   ├── routes/                 # API endpoints
 │   └── services/               # Quality check logic
-├── frontend/
-│   ├── app.py                  # Streamlit main
-│   └── pages/                  # Dashboard pages
+├── frontend-react/
+│   ├── src/pages/               # Home, Alerts, Reports, Configuration
+│   └── src/components/          # Layout, Tour, Card, Alert, etc.
 ├── tests/                      # Unit tests
 ├── requirements.txt            # Dependencies
 ├── docker-compose.yml          # Container setup
@@ -246,7 +243,7 @@ RECORD_DROP_WARNING_PERCENT = 0.10   # 10%
 3. **Analysis** → Run quality checks on new data
 4. **Detection** → Compare against baseline, detect changes
 5. **Alerts** → Generate alerts by severity
-6. **Visualization** → Dashboard shows results
+6. **Visualization** → Home page shows results
 
 ## 📊 Key Metrics
 

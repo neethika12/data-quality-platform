@@ -37,10 +37,10 @@ echo Terminal 1 - Start Backend:
 echo    python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 echo.
 echo Terminal 2 - Start Frontend:
-echo    streamlit run frontend/app.py
+echo    cd frontend-react ^&^& npm install ^&^& npm run dev
 echo.
 echo Then open:
 echo    API:      http://localhost:8000/docs
-echo    Frontend: http://localhost:8501
+echo    Frontend: http://localhost:3000
 echo.
 pause
