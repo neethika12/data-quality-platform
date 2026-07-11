@@ -258,10 +258,24 @@ app.layout = html.Div([
     ], style={'display': 'flex'}),
 ], style={'height': '100vh', 'display': 'flex', 'flexDirection': 'column'})
 
-# Navigation callback
+# Navigation click callback
+@callback(
+    Output('page-store', 'data'),
+    Input({'type': 'nav-btn', 'index': dash.ALL}, 'n_clicks'),
+    State({'type': 'nav-btn', 'index': dash.ALL}, 'id'),
+    prevent_initial_call=True
+)
+def nav_click(clicks, ids):
+    if not ids:
+        return 'dashboard'
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return 'dashboard'
+    return ctx.triggered[0]['prop_id'].split('"index":"')[1].split('"}')[0]
+
+# Navigation buttons callback
 @callback(
     Output('nav-buttons', 'children'),
-    Output('page-store', 'data'),
     Input('page-store', 'data'),
 )
 def update_nav(current_page):
@@ -296,22 +310,7 @@ def update_nav(current_page):
             )
         )
 
-    return nav_items, current_page
-
-# Navigation click callback
-@callback(
-    Output('page-store', 'data'),
-    Input({'type': 'nav-btn', 'index': dash.ALL}, 'n_clicks'),
-    State({'type': 'nav-btn', 'index': dash.ALL}, 'id'),
-    prevent_initial_call=True
-)
-def nav_click(clicks, ids):
-    if not ids:
-        return 'dashboard'
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        return 'dashboard'
-    return ctx.triggered[0]['prop_id'].split('"index":"')[1].split('"}')[0]
+    return nav_items
 
 # API status callback
 @callback(
