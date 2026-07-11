@@ -10,6 +10,7 @@ from backend.services.completeness import CompletenessChecker
 from backend.services.alerter import Alerter
 from backend.database import Database
 from backend.config import settings
+from backend.utils.file_handlers import FileHandler
 
 class QualityChecker:
     def __init__(self):
@@ -37,19 +38,28 @@ class QualityChecker:
             return self._initialize_baseline(dataset_id, df)
 
         # Parse baseline
-        baseline_schema = json.loads(dataset_info.get("baseline_schema", "{}"))
-        baseline_stats = json.loads(dataset_info.get("baseline_stats", "{}"))
+        baseline_schema = json.loads(dataset_info.get("baseline_schema") or "{}")
+        baseline_data = json.loads(dataset_info.get("baseline_data") or "{}")
+
+        if not baseline_schema:
+            # Legacy/edge case: dataset exists but no baseline was ever captured. Establish it now
+            # from the current data instead of comparing against nothing.
+            return self._initialize_baseline(dataset_id, df)
 
         # 1. Schema Validation
         schema_result = self.schema_validator.validate_schema(df, baseline_schema)
 
-        # 2. Drift Detection (needs baseline df, reconstruct from stats if necessary)
-        self.drift_detector.fit_baseline(df.head(10000))  # Fit on current for comparison
-        drift_result = {"drifted_features": [], "overall_drift_score": 0.0,
-                       "severity_level": "INFO", "feature_count": len(df.columns),
-                       "drifted_count": 0, "timestamp": datetime.utcnow().isoformat()}
-
-        # Note: Proper drift detection requires storing baseline df, implementing in phase 2
+        # 2. Drift Detection — compare current data against the ORIGINAL baseline sample
+        # captured at upload time, so drift reflects real change over time rather than a
+        # dataset compared against itself.
+        if baseline_data:
+            baseline_df = pd.DataFrame(baseline_data)
+            self.drift_detector.fit_baseline(baseline_df)
+            drift_result = self.drift_detector.detect_drift(df)
+        else:
+            drift_result = {"drifted_features": [], "overall_drift_score": 0.0,
+                           "severity_level": "INFO", "feature_count": len(df.columns),
+                           "drifted_count": 0, "timestamp": datetime.utcnow().isoformat()}
 
         # 3. Anomaly Detection
         self.anomaly_detector.fit_baseline(df)
@@ -98,17 +108,24 @@ class QualityChecker:
         }
 
     def _initialize_baseline(self, dataset_id: str, df: pd.DataFrame) -> Dict:
-        """Initialize baseline for first upload."""
+        """Initialize baseline for first upload (or for a legacy dataset that never got one)."""
         schema = SchemaValidator.extract_schema(df)
         stats = {}
 
         for col in df.columns:
             stats[col] = StatisticalTester.calculate_distribution_stats(df[col])
 
+        baseline_data = FileHandler.dataframe_to_baseline_sample(df)
+
+        # Preserve the existing name/description if this dataset row already exists
+        existing = Database.get_dataset(dataset_id)
+        name = existing["name"] if existing else f"Dataset {dataset_id[:8]}"
+        description = existing["description"] if existing else ""
+
         # Store baseline
         Database.store_dataset(
-            dataset_id, f"Dataset {dataset_id[:8]}", "",
-            len(df), len(df.columns), schema, stats
+            dataset_id, name, description,
+            len(df), len(df.columns), schema, stats, baseline_data
         )
 
         return {

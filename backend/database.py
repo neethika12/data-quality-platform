@@ -19,9 +19,16 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_analyzed TIMESTAMP,
             baseline_schema TEXT,
-            baseline_stats TEXT
+            baseline_stats TEXT,
+            baseline_data TEXT
         )
     """)
+
+    # Migration: add baseline_data to pre-existing databases that predate this column
+    cursor.execute("PRAGMA table_info(datasets)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    if "baseline_data" not in existing_cols:
+        cursor.execute("ALTER TABLE datasets ADD COLUMN baseline_data TEXT")
 
     # Quality results table
     cursor.execute("""
@@ -92,15 +99,40 @@ class Database:
 
     @staticmethod
     def store_dataset(dataset_id: str, name: str, description: str,
-                     row_count: int, column_count: int, baseline_schema: Dict, baseline_stats: Dict):
+                     row_count: int, column_count: int, baseline_schema: Dict, baseline_stats: Dict,
+                     baseline_data: Optional[Dict] = None):
         conn = Database.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO datasets
-            (id, name, description, row_count, column_count, baseline_schema, baseline_stats)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (id, name, description, row_count, column_count, baseline_schema, baseline_stats, baseline_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (dataset_id, name, description, row_count, column_count,
-              json.dumps(baseline_schema), json.dumps(baseline_stats)))
+              json.dumps(baseline_schema), json.dumps(baseline_stats), json.dumps(baseline_data or {})))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def delete_dataset(dataset_id: str):
+        """Delete a dataset row and everything associated with it."""
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM quality_results WHERE dataset_id = ?", (dataset_id,))
+        cursor.execute("DELETE FROM alerts WHERE dataset_id = ?", (dataset_id,))
+        cursor.execute("DELETE FROM schema_history WHERE dataset_id = ?", (dataset_id,))
+        cursor.execute("DELETE FROM metrics_history WHERE dataset_id = ?", (dataset_id,))
+        cursor.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def update_dataset_file_info(dataset_id: str, row_count: int, column_count: int):
+        """Update row/column counts after a new file version is uploaded, without touching the baseline."""
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE datasets SET row_count = ?, column_count = ? WHERE id = ?
+        """, (row_count, column_count, dataset_id))
         conn.commit()
         conn.close()
 

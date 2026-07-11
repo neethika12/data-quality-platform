@@ -68,3 +68,22 @@ class FileHandler:
     def get_sample_data_path() -> str:
         """Get path to sample dataset."""
         return os.path.join(os.path.dirname(__file__), "../data/sample_data.csv")
+
+    @staticmethod
+    def dataframe_to_baseline_sample(df: pd.DataFrame, max_rows: int = 5000) -> dict:
+        """Convert a dataframe to a JSON-safe, column-oriented sample for storing as a drift baseline."""
+        sample = df.head(max_rows)
+        safe = {}
+        for col in sample.columns:
+            series = sample[col]
+            if pd.api.types.is_datetime64_any_dtype(series):
+                values = series.astype(str).tolist()
+            else:
+                values = series.tolist()
+            # Replace NaN/NaT and numpy scalar types with plain JSON-safe values
+            safe[col] = [
+                None if (v is None or (isinstance(v, float) and pd.isna(v))) else
+                (v.item() if hasattr(v, "item") else v)
+                for v in values
+            ]
+        return safe
