@@ -1,0 +1,16 @@
+user_id,name,email,age,purchase_amount,registration_date,is_active
+1,Alice Johnson,alice@example.com,28,150.50,2023-01-15,true
+2,Bob Smith,bob@example.com,35,200.00,2023-02-20,true
+3,Charlie Brown,,42,75.25,2023-03-10,false
+4,Diana Prince,diana@example.com,31,320.00,2023-04-05,true
+5,Evan Davis,evan@example.com,,450.75,2023-05-12,true
+6,Fiona Green,fiona@example.com,26,125.00,2023-06-18,true
+7,George Harris,george@example.com,39,-50.00,2023-07-22,false
+8,Hannah Lee,hannah@example.com,33,275.50,2023-08-30,true
+9,Isaac Newton,,29,180.00,2023-09-14,true
+10,Julia Roberts,julia@example.com,45,550.00,2023-10-20,true
+11,Kevin Chen,kevin@example.com,27,95.50,2023-11-05,false
+12,Laura Martinez,laura@example.com,34,410.25,2023-12-01,true
+13,Michael Scott,michael@example.com,,165.75,2024-01-10,true
+14,Nancy Wilson,nancy@example.com,41,289.00,2024-02-15,true
+15,Oliver Queen,oliver@example.com,38,520.50,2024-03-20,true
