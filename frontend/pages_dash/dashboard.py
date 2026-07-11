@@ -1,4 +1,4 @@
-from dash import html, dcc, callback, Input, Output, State
+from dash import html, dcc
 import plotly.graph_objects as go
 import requests
 import json
@@ -15,26 +15,17 @@ COLORS = {
 }
 
 def render():
-    return html.Div([
-        html.H1("📊 Dashboard", className='page-title'),
-        html.P("Real-time data quality monitoring overview", className='page-subtitle'),
-
-        html.Div(id='dashboard-content'),
-    ])
-
-@callback(
-    Output('dashboard-content', 'children'),
-    Input('dashboard-content', 'id'),
-    prevent_initial_call=False
-)
-def load_dashboard(_):
     try:
         # Fetch datasets
         response = requests.get(f"{API_BASE_URL}/datasets", timeout=10)
         datasets = response.json().get("datasets", []) if response.status_code == 200 else []
 
         if not datasets:
-            return html.Div("No datasets uploaded yet. Go to Data Explorer to upload a dataset.", className='card')
+            return html.Div([
+                html.H1("📊 Dashboard", className='page-title'),
+                html.P("Real-time data quality monitoring overview", className='page-subtitle'),
+                html.Div("📤 No datasets uploaded yet. Go to Data Explorer to upload a dataset.", className='card', style={'padding': '20px', 'textAlign': 'center', 'color': '#7f8c8d'})
+            ])
 
         # Get first dataset
         dataset = datasets[0]
@@ -49,12 +40,12 @@ def load_dashboard(_):
         kpi_cards = []
 
         kpi_cards.append(html.Div([
-            html.Div(str(dataset.get("row_count", 0)).replace(',', ','), className='metric-value'),
+            html.Div(f"{dataset.get('row_count', 0):,}", className='metric-value'),
             html.Div("Total Rows", className='metric-label'),
         ], className='metric-card', style={'background': f'linear-gradient(135deg, {COLORS["primary"]} 0%, {COLORS["secondary"]} 100%)'}))
 
         kpi_cards.append(html.Div([
-            html.Div(dataset.get("column_count", 0), className='metric-value'),
+            html.Div(str(dataset.get("column_count", 0)), className='metric-value'),
             html.Div("Columns", className='metric-label'),
         ], className='metric-card', style={'background': f'linear-gradient(135deg, {COLORS["warning"]} 0%, #ff922b 100%)'}))
 
@@ -85,7 +76,7 @@ def load_dashboard(_):
                 }
             }
         ))
-        gauge_fig.update_layout(height=300, margin=dict(l=0, r=0, t=50, b=0))
+        gauge_fig.update_layout(height=300, margin=dict(l=0, r=0, t=50, b=0), template='plotly_white')
 
         # Alerts summary
         alerts_response = requests.get(f"{API_BASE_URL}/alerts/dataset/{dataset_id}/summary", timeout=10)
@@ -105,34 +96,34 @@ def load_dashboard(_):
                 ], className='alert-warning'))
 
         return html.Div([
+            html.H1("📊 Dashboard", className='page-title'),
+            html.P("Real-time data quality monitoring overview", className='page-subtitle'),
+
             # KPI Grid
             html.Div(kpi_cards, style={'display': 'grid', 'gridTemplateColumns': 'repeat(auto-fit, minmax(200px, 1fr))', 'gap': '16px', 'marginBottom': '30px'}),
 
             # Quality gauge
             html.Div([
-                html.Div([
-                    dcc.Graph(figure=gauge_fig)
-                ], className='card', style={'flex': '1'}),
-            ], style={'display': 'flex', 'gap': '20px', 'marginBottom': '30px'}),
+                dcc.Graph(figure=gauge_fig)
+            ], className='card', style={'marginBottom': '30px'}),
 
             # Alerts section
             html.Div([
                 html.H3("Recent Alerts", style={'fontSize': '18px', 'fontWeight': '600', 'marginBottom': '12px'}),
-                html.Div(alerts_content if alerts_content else "✅ No alerts") if alerts_content else html.Div("✅ No alerts"),
+                html.Div(alerts_content if alerts_content else html.Div("✅ No alerts", style={'color': COLORS['success'], 'fontWeight': '600'})),
             ], className='card'),
 
             # Analysis button
             html.Div([
                 html.Button(
                     "🔍 Run Quality Analysis",
-                    id='run-analysis-btn',
-                    n_clicks=0,
                     style={'padding': '12px 24px', 'fontSize': '16px', 'marginTop': '20px'}
                 ),
-                html.Div(id='analysis-status', style={'marginTop': '10px', 'fontSize': '14px'}),
-            ], className='card'),
-
+            ], className='card', style={'marginTop': '20px'}),
         ])
 
     except Exception as e:
-        return html.Div(f"Error loading dashboard: {str(e)}", className='card', style={'color': COLORS['danger']})
+        return html.Div([
+            html.H1("📊 Dashboard", className='page-title'),
+            html.Div(f"❌ Error loading dashboard: {str(e)}", className='card', style={'color': COLORS['danger'], 'padding': '20px'})
+        ])
