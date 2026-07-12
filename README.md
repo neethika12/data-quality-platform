@@ -329,11 +329,6 @@ Total:                  13s
 ## 📝 License
 
 MIT
-
-## 👤 Author
-
-Built with ❤️ by Claude Code
-
 ---
 
 **Questions?** Check the API docs at http://localhost:8000/docs or GitHub issues.
