@@ -59,22 +59,21 @@ async def upload_dataset(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{dataset_id}/upload-version")
-async def upload_new_version(dataset_id: str, file: UploadFile = File(...)):
-    """Upload a new snapshot of data for an existing dataset, keeping the original baseline
-    so the next check can measure real drift/changes against it."""
+VERSIONS_DIR = os.path.join(settings.UPLOAD_DIR, "versions")
+
+
+@router.post("/{dataset_id}/versions")
+async def upload_dataset_version(dataset_id: str, file: UploadFile = File(...)):
+    """Upload another snapshot of data for an existing dataset. Every version is kept
+    (not replaced) so several files can each be checked against the same fixed baseline."""
     dataset = Database.get_dataset(dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     try:
-        # Remove the old file(s) for this dataset
-        old_files = [f for f in os.listdir(settings.UPLOAD_DIR) if f.startswith(f"{dataset_id}_")]
-        for f in old_files:
-            os.remove(os.path.join(settings.UPLOAD_DIR, f))
-
-        # Save the new file under the same dataset_id
-        file_path = os.path.join(settings.UPLOAD_DIR, f"{dataset_id}_{file.filename}")
+        os.makedirs(VERSIONS_DIR, exist_ok=True)
+        version_id = str(uuid.uuid4())
+        file_path = os.path.join(VERSIONS_DIR, f"{version_id}_{file.filename}")
         with open(file_path, "wb") as f:
             content = await file.read()
             f.write(content)
@@ -86,21 +85,53 @@ async def upload_new_version(dataset_id: str, file: UploadFile = File(...)):
 
         df = FileHandler.read_file(file_path)
 
-        # Record the new "current" file — baseline stays as the original reference point
+        Database.add_dataset_version(version_id, dataset_id, file.filename, file_path, len(df), len(df.columns))
+        # Keep a lightweight "most recent version" pointer on the dataset for convenience/default selection
         Database.update_current_file(dataset_id, file.filename, len(df), len(df.columns))
 
         return {
+            "version_id": version_id,
             "dataset_id": dataset_id,
             "filename": file.filename,
             "row_count": len(df),
             "column_count": len(df.columns),
-            "message": "New data uploaded. Run a check to compare it against the original baseline."
+            "message": "New version uploaded. Run a check to compare it against the baseline."
         }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Kept for backward compatibility with older clients — same behavior as /versions
+@router.post("/{dataset_id}/upload-version")
+async def upload_new_version_legacy(dataset_id: str, file: UploadFile = File(...)):
+    return await upload_dataset_version(dataset_id, file)
+
+
+@router.get("/{dataset_id}/versions")
+def list_dataset_versions(dataset_id: str):
+    """List every version uploaded for this dataset (most recent first)."""
+    dataset = Database.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    versions = Database.list_dataset_versions(dataset_id)
+    return {"count": len(versions), "versions": versions}
+
+
+@router.delete("/{dataset_id}/versions/{version_id}")
+def delete_dataset_version(dataset_id: str, version_id: str):
+    """Delete a single uploaded version (not the baseline)."""
+    version = Database.get_dataset_version(version_id)
+    if not version or version["dataset_id"] != dataset_id:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    if os.path.exists(version["file_path"]):
+        os.remove(version["file_path"])
+    Database.delete_dataset_version(version_id)
+
+    return {"message": f"Version {version_id} deleted"}
 
 @router.get("/{dataset_id}")
 def get_dataset(dataset_id: str):
@@ -141,10 +172,17 @@ def delete_dataset(dataset_id: str):
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Clean up file
+    # Clean up the baseline file
     files = [f for f in os.listdir(settings.UPLOAD_DIR) if dataset_id in f]
     for f in files:
-        os.remove(os.path.join(settings.UPLOAD_DIR, f))
+        path = os.path.join(settings.UPLOAD_DIR, f)
+        if os.path.isfile(path):
+            os.remove(path)
+
+    # Clean up every uploaded version's file
+    for version in Database.list_dataset_versions(dataset_id):
+        if os.path.exists(version["file_path"]):
+            os.remove(version["file_path"])
 
     # Remove the dataset and its history from the database
     Database.delete_dataset(dataset_id)

@@ -24,14 +24,20 @@ const STEPS = [
   {
     target: 'choose-run-card',
     route: '/',
-    title: 'Step 2 — Run a Check',
-    text: 'Pick the file from this list, then click "Run Check". The first check compares the file to itself (nothing to see yet) — upload newer data later to see real drift.',
+    title: 'Step 2 — Pick a Dataset',
+    text: 'Every file you upload becomes its own tracked dataset with a locked-in baseline. Pick which one you want to work with here.',
+  },
+  {
+    target: 'versions-card',
+    route: '/',
+    title: 'Step 3 — Check One or More Files',
+    text: 'The baseline is always shown as its own card at the top. Upload as many additional files as you want here — each one gets its own card, and you can click "Run Check" on any of them individually to see how it compares to the baseline.',
   },
   {
     target: 'results-card',
     route: '/',
-    title: 'Step 3 — Results',
-    text: 'Your quality score and a plain-English breakdown show up here, along with exactly which two files were compared. Click "Show detailed technical breakdown" for the full numbers (drift scores, schema changes, per-column stats).',
+    title: 'Step 4 — Results',
+    text: 'Results always show for whichever file you last selected above. Your quality score and a plain-English breakdown show up here. Click "Show detailed technical breakdown" for the full numbers (drift scores, schema changes, per-column stats).',
   },
   {
     target: 'nav-alerts',

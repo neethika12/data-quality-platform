@@ -39,11 +39,27 @@ def init_db():
         if col not in existing_cols:
             cursor.execute(f"ALTER TABLE datasets ADD COLUMN {col} {coltype}")
 
+    # Dataset versions table — every file uploaded AFTER the baseline, kept individually
+    # so multiple versions can each be checked against the same fixed baseline.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS dataset_versions (
+            id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            row_count INTEGER,
+            column_count INTEGER,
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(dataset_id) REFERENCES datasets(id)
+        )
+    """)
+
     # Quality results table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS quality_results (
             id TEXT PRIMARY KEY,
             dataset_id TEXT NOT NULL,
+            version_id TEXT,
             schema_validation TEXT,
             drift_analysis TEXT,
             anomaly_detection TEXT,
@@ -53,6 +69,12 @@ def init_db():
             FOREIGN KEY(dataset_id) REFERENCES datasets(id)
         )
     """)
+
+    # Migration: add version_id to pre-existing quality_results tables
+    cursor.execute("PRAGMA table_info(quality_results)")
+    qr_cols = {row[1] for row in cursor.fetchall()}
+    if "version_id" not in qr_cols:
+        cursor.execute("ALTER TABLE quality_results ADD COLUMN version_id TEXT")
 
     # Alerts table
     cursor.execute("""
@@ -146,7 +168,50 @@ class Database:
         cursor.execute("DELETE FROM alerts WHERE dataset_id = ?", (dataset_id,))
         cursor.execute("DELETE FROM schema_history WHERE dataset_id = ?", (dataset_id,))
         cursor.execute("DELETE FROM metrics_history WHERE dataset_id = ?", (dataset_id,))
+        cursor.execute("DELETE FROM dataset_versions WHERE dataset_id = ?", (dataset_id,))
         cursor.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def add_dataset_version(version_id: str, dataset_id: str, filename: str, file_path: str,
+                           row_count: int, column_count: int):
+        """Record a new file version uploaded for this dataset. Old versions are kept, not replaced."""
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO dataset_versions (id, dataset_id, filename, file_path, row_count, column_count)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (version_id, dataset_id, filename, file_path, row_count, column_count))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def list_dataset_versions(dataset_id: str) -> List[Dict]:
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM dataset_versions WHERE dataset_id = ? ORDER BY uploaded_at DESC
+        """, (dataset_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    @staticmethod
+    def get_dataset_version(version_id: str) -> Optional[Dict]:
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM dataset_versions WHERE id = ?", (version_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    @staticmethod
+    def delete_dataset_version(version_id: str):
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM quality_results WHERE version_id = ?", (version_id,))
+        cursor.execute("DELETE FROM dataset_versions WHERE id = ?", (version_id,))
         conn.commit()
         conn.close()
 
@@ -184,14 +249,14 @@ class Database:
     @staticmethod
     def store_quality_result(result_id: str, dataset_id: str, schema_validation: Dict,
                             drift_analysis: Dict, anomaly_detection: Dict,
-                            completeness: Dict, overall_score: float):
+                            completeness: Dict, overall_score: float, version_id: Optional[str] = None):
         conn = Database.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO quality_results
-            (id, dataset_id, schema_validation, drift_analysis, anomaly_detection, completeness, overall_quality_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (result_id, dataset_id, json.dumps(schema_validation), json.dumps(drift_analysis),
+            (id, dataset_id, version_id, schema_validation, drift_analysis, anomaly_detection, completeness, overall_quality_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (result_id, dataset_id, version_id, json.dumps(schema_validation), json.dumps(drift_analysis),
               json.dumps(anomaly_detection), json.dumps(completeness), overall_score))
         conn.commit()
         conn.close()
@@ -208,13 +273,19 @@ class Database:
         return None
 
     @staticmethod
-    def get_latest_quality_result(dataset_id: str) -> Optional[Dict]:
+    def get_latest_quality_result(dataset_id: str, version_id: Optional[str] = None) -> Optional[Dict]:
         conn = Database.get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM quality_results WHERE dataset_id = ?
-            ORDER BY created_at DESC LIMIT 1
-        """, (dataset_id,))
+        if version_id:
+            cursor.execute("""
+                SELECT * FROM quality_results WHERE dataset_id = ? AND version_id = ?
+                ORDER BY created_at DESC LIMIT 1
+            """, (dataset_id, version_id))
+        else:
+            cursor.execute("""
+                SELECT * FROM quality_results WHERE dataset_id = ? AND version_id IS NULL
+                ORDER BY created_at DESC LIMIT 1
+            """, (dataset_id,))
         row = cursor.fetchone()
         conn.close()
         if row:

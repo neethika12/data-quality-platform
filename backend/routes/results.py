@@ -25,9 +25,10 @@ def get_result(result_id: str):
     }
 
 @router.get("/datasets/{dataset_id}/latest-result")
-def get_latest_result(dataset_id: str):
-    """Get latest quality result for dataset."""
-    result = Database.get_latest_quality_result(dataset_id)
+def get_latest_result(dataset_id: str, version_id: Optional[str] = None):
+    """Get latest quality result for dataset. Pass version_id to get the result for a
+    specific uploaded version; omit it to get the baseline-against-itself result."""
+    result = Database.get_latest_quality_result(dataset_id, version_id=version_id)
     if not result:
         raise HTTPException(status_code=404, detail="No results found for dataset")
 
@@ -35,6 +36,7 @@ def get_latest_result(dataset_id: str):
     return {
         "id": result["id"],
         "dataset_id": result["dataset_id"],
+        "version_id": result["version_id"],
         "schema_validation": json.loads(result["schema_validation"]),
         "drift_analysis": json.loads(result["drift_analysis"]),
         "anomaly_detection": json.loads(result["anomaly_detection"]),

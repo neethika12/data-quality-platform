@@ -10,21 +10,29 @@ import traceback
 router = APIRouter(prefix="/api", tags=["analysis"])
 
 @router.post("/datasets/{dataset_id}/analyze")
-def analyze_dataset(dataset_id: str, last_update_timestamp: Optional[str] = None):
-    """Run quality analysis on a dataset."""
+def analyze_dataset(dataset_id: str, version_id: Optional[str] = None, last_update_timestamp: Optional[str] = None):
+    """Run quality analysis on a dataset. Pass version_id to check a specific uploaded
+    version against the baseline; omit it to check the baseline against itself."""
     try:
         # Get dataset
         dataset = Database.get_dataset(dataset_id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
 
-        # Find dataset file
         from backend.config import settings
-        file_matches = [f for f in os.listdir(settings.UPLOAD_DIR) if dataset_id in f]
-        if not file_matches:
-            raise HTTPException(status_code=404, detail="Dataset file not found")
 
-        file_path = os.path.join(settings.UPLOAD_DIR, file_matches[0])
+        if version_id:
+            version = Database.get_dataset_version(version_id)
+            if not version or version["dataset_id"] != dataset_id:
+                raise HTTPException(status_code=404, detail="Version not found")
+            file_path = version["file_path"]
+        else:
+            # No version specified — fall back to the baseline's own file
+            file_matches = [f for f in os.listdir(settings.UPLOAD_DIR)
+                           if f.startswith(f"{dataset_id}_") and os.path.isfile(os.path.join(settings.UPLOAD_DIR, f))]
+            if not file_matches:
+                raise HTTPException(status_code=404, detail="Dataset file not found")
+            file_path = os.path.join(settings.UPLOAD_DIR, file_matches[0])
 
         # Read dataset
         df = FileHandler.read_file(file_path)
@@ -39,7 +47,7 @@ def analyze_dataset(dataset_id: str, last_update_timestamp: Optional[str] = None
 
         # Run quality check
         checker = QualityChecker()
-        result = checker.run_full_check(dataset_id, df, ts)
+        result = checker.run_full_check(dataset_id, df, ts, version_id=version_id)
 
         return result
 

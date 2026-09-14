@@ -27,8 +27,10 @@ class QualityChecker:
         )
 
     def run_full_check(self, dataset_id: str, df: pd.DataFrame,
-                       last_update_timestamp: Optional[datetime] = None) -> Dict:
-        """Run complete quality check on dataset."""
+                       last_update_timestamp: Optional[datetime] = None,
+                       version_id: Optional[str] = None) -> Dict:
+        """Run complete quality check on dataset. version_id identifies which uploaded
+        version this check was run against, if any (None means the baseline itself)."""
 
         # Get baseline from database
         dataset_info = Database.get_dataset(dataset_id)
@@ -88,7 +90,7 @@ class QualityChecker:
         result_id = str(uuid.uuid4())
         Database.store_quality_result(
             result_id, dataset_id, schema_result, drift_result,
-            anomaly_result, completeness_result, overall_quality_score
+            anomaly_result, completeness_result, overall_quality_score, version_id=version_id
         )
 
         # Update last analyzed
@@ -97,6 +99,7 @@ class QualityChecker:
         return {
             "result_id": result_id,
             "dataset_id": dataset_id,
+            "version_id": version_id,
             "schema_validation": schema_result,
             "drift_analysis": drift_result,
             "anomaly_detection": anomaly_result,

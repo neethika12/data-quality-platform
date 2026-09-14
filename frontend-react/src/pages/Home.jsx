@@ -3,30 +3,41 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Alert from '../components/Alert'
 import { apiService } from '../utils/api'
-import { Upload, RefreshCw, CheckCircle2, Trash2, ChevronDown, ChevronUp, RotateCw } from 'lucide-react'
+import { Upload, RefreshCw, CheckCircle2, Trash2, ChevronDown, ChevronUp, PlusCircle } from 'lucide-react'
 
 export default function Home() {
   const [datasets, setDatasets] = useState([])
   const [activeId, setActiveId] = useState(null)
+  const [versions, setVersions] = useState([])
+  const [activeVersionId, setActiveVersionId] = useState(null) // null = the baseline itself
   const [result, setResult] = useState(null)
   const [alertSummary, setAlertSummary] = useState(null)
   const [loadingList, setLoadingList] = useState(true)
+  const [loadingVersions, setLoadingVersions] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadingVersion, setUploadingVersion] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [loadingResult, setLoadingResult] = useState(false)
   const [error, setError] = useState(null)
   const [banner, setBanner] = useState(null) // { type, message }
   const [showDetails, setShowDetails] = useState(false)
-  const [uploadingVersion, setUploadingVersion] = useState(false)
 
   useEffect(() => {
     loadDatasets()
   }, [])
 
   useEffect(() => {
-    if (activeId) loadResult(activeId)
-    else setResult(null)
+    if (activeId) loadVersions(activeId)
+    else {
+      setVersions([])
+      setActiveVersionId(null)
+    }
   }, [activeId])
+
+  useEffect(() => {
+    if (activeId) loadResult(activeId, activeVersionId)
+    else setResult(null)
+  }, [activeId, activeVersionId])
 
   const loadDatasets = async (preferId) => {
     try {
@@ -47,12 +58,33 @@ export default function Home() {
     }
   }
 
-  const loadResult = async (datasetId) => {
+  const loadVersions = async (datasetId, preferVersionId) => {
+    try {
+      setLoadingVersions(true)
+      const res = await apiService.getDatasetVersions(datasetId)
+      const list = res.data.versions || []
+      setVersions(list)
+      if (preferVersionId && list.some(v => v.id === preferVersionId)) {
+        setActiveVersionId(preferVersionId)
+      } else if (list.length > 0) {
+        setActiveVersionId(list[0].id) // most recent version, by default
+      } else {
+        setActiveVersionId(null) // fall back to the baseline itself
+      }
+    } catch (err) {
+      setVersions([])
+      setActiveVersionId(null)
+    } finally {
+      setLoadingVersions(false)
+    }
+  }
+
+  const loadResult = async (datasetId, versionId) => {
     try {
       setLoadingResult(true)
       setError(null)
       const [resultRes, summaryRes] = await Promise.allSettled([
-        apiService.getLatestResult(datasetId),
+        apiService.getLatestResult(datasetId, versionId),
         apiService.getAlertSummary(datasetId),
       ])
       setResult(resultRes.status === 'fulfilled' ? resultRes.value.data : null)
@@ -70,7 +102,7 @@ export default function Home() {
       setError(null)
       const res = await apiService.uploadDataset(file)
       const newId = res.data?.dataset_id
-      setBanner({ type: 'success', message: `"${file.name}" uploaded successfully.` })
+      setBanner({ type: 'success', message: `"${file.name}" uploaded as a new baseline.` })
       await loadDatasets(newId)
     } catch (err) {
       setError(err.response?.data?.detail || 'Upload failed. Please check the file and try again.')
@@ -80,23 +112,40 @@ export default function Home() {
     }
   }
 
+  const handleUploadVersion = async (e) => {
+    const file = e.target.files[0]
+    if (!file || !activeId) return
+    try {
+      setUploadingVersion(true)
+      setError(null)
+      const res = await apiService.uploadDatasetVersion(activeId, file)
+      setBanner({ type: 'success', message: `"${file.name}" added. Click "Run Check" on it to compare against the baseline.` })
+      await loadVersions(activeId, res.data?.version_id)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not upload this file.')
+    } finally {
+      setUploadingVersion(false)
+      e.target.value = ''
+    }
+  }
+
   const handleRunCheck = async () => {
     if (!activeId) return
     try {
       setAnalyzing(true)
       setError(null)
-      await apiService.runAnalysis(activeId)
+      await apiService.runAnalysis(activeId, activeVersionId)
       setBanner({ type: 'success', message: 'Check complete! Here are your results.' })
-      await loadResult(activeId)
+      await loadResult(activeId, activeVersionId)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not run the check on this dataset.')
+      setError(err.response?.data?.detail || 'Could not run the check on this file.')
     } finally {
       setAnalyzing(false)
     }
   }
 
   const handleDelete = async (datasetId) => {
-    if (!window.confirm('Remove this dataset? This cannot be undone.')) return
+    if (!window.confirm('Remove this dataset and all its versions? This cannot be undone.')) return
     try {
       await apiService.deleteDataset(datasetId)
       await loadDatasets()
@@ -105,27 +154,19 @@ export default function Home() {
     }
   }
 
-  const handleUploadNewVersion = async (e) => {
-    const file = e.target.files[0]
-    if (!file || !activeId) return
+  const handleDeleteVersion = async (versionId) => {
+    if (!window.confirm('Remove this uploaded version? This cannot be undone.')) return
     try {
-      setUploadingVersion(true)
-      setError(null)
-      await apiService.uploadNewVersion(activeId, file)
-      setBanner({ type: 'success', message: 'New data uploaded. Click "Run Check" to compare it against the original baseline.' })
-      await loadDatasets(activeId)
+      await apiService.deleteDatasetVersion(activeId, versionId)
+      await loadVersions(activeId)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not upload the new data.')
-    } finally {
-      setUploadingVersion(false)
-      e.target.value = ''
+      setError('Could not delete this version.')
     }
   }
 
   const activeDataset = datasets.find(d => d.id === activeId)
-  // Compute this from the two filenames directly rather than trusting a
-  // backend-provided flag — the list endpoint doesn't always include it.
-  const hasNewVersion = (ds) => !!ds && !!ds.current_filename && ds.current_filename !== ds.baseline_filename
+  const activeVersion = versions.find(v => v.id === activeVersionId)
+  const checkedFilename = activeVersion ? activeVersion.filename : activeDataset?.baseline_filename
   const qualityScore = result?.overall_quality_score ?? null
   const scoreLabel = qualityScore === null ? null
     : qualityScore >= 0.8 ? 'Good'
@@ -150,7 +191,7 @@ export default function Home() {
       <div>
         <h1 className="text-3xl font-bold mb-1">Track One Dataset Over Time 🔁</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Upload a file to lock in a baseline, then check it again over time to catch drift and changes.
+          Upload a file to lock in a baseline, then upload as many later files as you want and check each one against it.
           Want to compare two files directly instead? Go to <span className="font-semibold text-primary">Compare</span> in the sidebar.
         </p>
       </div>
@@ -180,16 +221,16 @@ export default function Home() {
             <p className="font-semibold mb-1">
               {uploading ? 'Uploading…' : 'Click here to choose a file'}
             </p>
-            <p className="text-sm text-gray-500">Works with CSV, Excel, or Parquet files</p>
+            <p className="text-sm text-gray-500">Works with CSV, Excel, or Parquet files. This becomes a new baseline.</p>
           </label>
         </div>
       </Card>
 
-      {/* STEP 2: Pick which dataset + Run check */}
+      {/* STEP 2: Pick which tracked dataset */}
       <Card data-tour="choose-run-card">
         <div className="flex items-center gap-2 mb-4">
           <span className="w-7 h-7 rounded-full bg-gradient-primary text-white flex items-center justify-center text-sm font-bold">2</span>
-          <h3 className="text-lg font-semibold">Choose a file and run a check</h3>
+          <h3 className="text-lg font-semibold">Choose which tracked dataset</h3>
         </div>
 
         {loadingList ? (
@@ -219,21 +260,12 @@ export default function Home() {
                     <p className="text-xs text-gray-500">
                       {ds.row_count?.toLocaleString()} rows · {ds.column_count} columns · baseline established {new Date(ds.created_at).toLocaleDateString()}
                     </p>
-                    {hasNewVersion(ds) ? (
-                      <p className="text-xs text-primary font-medium mt-0.5">
-                        → Currently checking new data: {ds.current_filename} (uploaded {new Date(ds.current_file_uploaded_at).toLocaleString()})
-                      </p>
-                    ) : (
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        No new data uploaded yet — a check right now compares this file against itself
-                      </p>
-                    )}
                   </div>
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDelete(ds.id) }}
                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
-                  title="Remove this file"
+                  title="Remove this dataset and all its versions"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -241,13 +273,86 @@ export default function Home() {
             ))}
           </div>
         )}
+      </Card>
 
-        {activeDataset && (
+      {/* STEP 3: Baseline + every uploaded version, each individually checkable */}
+      {activeDataset && (
+        <Card data-tour="versions-card">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-7 h-7 rounded-full bg-gradient-primary text-white flex items-center justify-center text-sm font-bold">3</span>
+            <h3 className="text-lg font-semibold">Pick a file to check against the baseline</h3>
+          </div>
+
+          <div className="space-y-2">
+            {/* Baseline — always shown as its own card */}
+            <div
+              onClick={() => setActiveVersionId(null)}
+              className={`flex items-center justify-between p-4 rounded-lg cursor-pointer border transition ${
+                activeVersionId === null
+                  ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                  : 'border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                {activeVersionId === null ? (
+                  <CheckCircle2 size={20} className="text-primary flex-shrink-0" />
+                ) : (
+                  <div className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-gray-600 flex-shrink-0" />
+                )}
+                <div>
+                  <p className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    {activeDataset.baseline_filename}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold tracking-wide">BASELINE</span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    established {new Date(activeDataset.created_at).toLocaleString()} · the fixed reference every version is checked against
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Every uploaded version */}
+            {loadingVersions ? (
+              <p className="text-gray-500 text-sm py-2">Loading versions…</p>
+            ) : versions.map((v) => (
+              <div
+                key={v.id}
+                onClick={() => setActiveVersionId(v.id)}
+                className={`flex items-center justify-between p-4 rounded-lg cursor-pointer border transition ${
+                  v.id === activeVersionId
+                    ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                    : 'border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {v.id === activeVersionId ? (
+                    <CheckCircle2 size={20} className="text-primary flex-shrink-0" />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-gray-600 flex-shrink-0" />
+                  )}
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">{v.filename}</p>
+                    <p className="text-xs text-gray-500">
+                      {v.row_count?.toLocaleString()} rows · {v.column_count} columns · uploaded {new Date(v.uploaded_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteVersion(v.id) }}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                  title="Remove this version"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
           <div className="mt-5 flex items-center justify-between flex-wrap gap-3">
             <div>
               <input
                 type="file"
-                onChange={handleUploadNewVersion}
+                onChange={handleUploadVersion}
                 accept=".csv,.parquet,.xlsx,.xls"
                 className="hidden"
                 id="new-version-input"
@@ -257,22 +362,22 @@ export default function Home() {
                 htmlFor="new-version-input"
                 className="inline-flex items-center gap-2 text-sm text-primary hover:underline cursor-pointer"
               >
-                <RotateCw size={14} />
-                {uploadingVersion ? 'Uploading…' : 'Upload newer data to replace the current file (baseline stays locked)'}
+                <PlusCircle size={14} />
+                {uploadingVersion ? 'Uploading…' : 'Upload another file to check against this baseline'}
               </label>
             </div>
             <Button onClick={handleRunCheck} disabled={analyzing}>
               <RefreshCw size={16} className="inline mr-2" />
-              {analyzing ? 'Checking…' : `Run Check on "${activeDataset.name}"`}
+              {analyzing ? 'Checking…' : `Run Check on "${checkedFilename}"`}
             </Button>
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
-      {/* STEP 3: Results */}
+      {/* STEP 4: Results */}
       <Card data-tour="results-card">
         <div className="flex items-center gap-2 mb-4">
-          <span className="w-7 h-7 rounded-full bg-gradient-primary text-white flex items-center justify-center text-sm font-bold">3</span>
+          <span className="w-7 h-7 rounded-full bg-gradient-primary text-white flex items-center justify-center text-sm font-bold">4</span>
           <h3 className="text-lg font-semibold">Results</h3>
         </div>
 
@@ -284,15 +389,19 @@ export default function Home() {
           <p className="text-gray-500 text-sm">Loading results…</p>
         ) : !result ? (
           <p className="text-gray-500 text-sm py-6 text-center">
-            No results yet — click "Run Check" above to analyze this file.
+            No results yet for "{checkedFilename}" — click "Run Check" above to analyze it.
           </p>
         ) : (
             <div className="space-y-6">
               {/* Which files this result actually compares */}
               <div className="text-xs px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                Comparing <span className="font-semibold">{activeDataset.current_filename}</span> against the baseline
-                (<span className="font-semibold">{activeDataset.baseline_filename}</span>, established {new Date(activeDataset.created_at).toLocaleDateString()})
-                {!hasNewVersion(activeDataset) && ' — same file, so schema/drift show no change until you upload newer data'}
+                {activeVersionId ? (
+                  <>Comparing <span className="font-semibold">{checkedFilename}</span> against the baseline
+                  (<span className="font-semibold">{activeDataset.baseline_filename}</span>, established {new Date(activeDataset.created_at).toLocaleDateString()})</>
+                ) : (
+                  <>Checking the baseline (<span className="font-semibold">{activeDataset.baseline_filename}</span>) against itself
+                  — schema/drift show no change by definition; upload another file above to check real drift</>
+                )}
               </div>
 
               {/* Overall score */}

@@ -26,19 +26,25 @@ export const apiService = {
     })
   },
   deleteDataset: (datasetId) => api.delete(`/datasets/${datasetId}`),
-  uploadNewVersion: (datasetId, file) => {
+
+  // Versions — multiple files can each be checked against the same fixed baseline
+  uploadDatasetVersion: (datasetId, file) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post(`/datasets/${datasetId}/upload-version`, formData, {
+    return api.post(`/datasets/${datasetId}/versions`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
   },
+  getDatasetVersions: (datasetId) => api.get(`/datasets/${datasetId}/versions`),
+  deleteDatasetVersion: (datasetId, versionId) => api.delete(`/datasets/${datasetId}/versions/${versionId}`),
 
-  // Analysis
-  runAnalysis: (datasetId) => api.post(`/datasets/${datasetId}/analyze`),
+  // Analysis — pass versionId to check a specific uploaded version against the baseline
+  runAnalysis: (datasetId, versionId) =>
+    api.post(`/datasets/${datasetId}/analyze`, null, { params: versionId ? { version_id: versionId } : {} }),
 
   // Results
-  getLatestResult: (datasetId) => api.get(`/datasets/${datasetId}/latest-result`),
+  getLatestResult: (datasetId, versionId) =>
+    api.get(`/datasets/${datasetId}/latest-result`, { params: versionId ? { version_id: versionId } : {} }),
   getMetricHistory: (datasetId) => api.get(`/datasets/${datasetId}/metric-history`),
 
   // Alerts
