@@ -126,10 +126,12 @@ def get_dataset(dataset_id: str):
 @router.get("")
 def list_datasets(limit: int = 50):
     """List all datasets."""
-    datasets = Database.list_datasets()
+    datasets = Database.list_datasets()[:limit]
+    for d in datasets:
+        d["has_new_version"] = d.get("current_filename") != d.get("baseline_filename")
     return {
         "count": len(datasets),
-        "datasets": datasets[:limit]
+        "datasets": datasets
     }
 
 @router.delete("/{dataset_id}")

@@ -123,6 +123,9 @@ export default function Home() {
   }
 
   const activeDataset = datasets.find(d => d.id === activeId)
+  // Compute this from the two filenames directly rather than trusting a
+  // backend-provided flag — the list endpoint doesn't always include it.
+  const hasNewVersion = (ds) => !!ds && !!ds.current_filename && ds.current_filename !== ds.baseline_filename
   const qualityScore = result?.overall_quality_score ?? null
   const scoreLabel = qualityScore === null ? null
     : qualityScore >= 0.8 ? 'Good'
@@ -216,7 +219,7 @@ export default function Home() {
                     <p className="text-xs text-gray-500">
                       {ds.row_count?.toLocaleString()} rows · {ds.column_count} columns · baseline established {new Date(ds.created_at).toLocaleDateString()}
                     </p>
-                    {ds.has_new_version ? (
+                    {hasNewVersion(ds) ? (
                       <p className="text-xs text-primary font-medium mt-0.5">
                         → Currently checking new data: {ds.current_filename} (uploaded {new Date(ds.current_file_uploaded_at).toLocaleString()})
                       </p>
@@ -289,7 +292,7 @@ export default function Home() {
               <div className="text-xs px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                 Comparing <span className="font-semibold">{activeDataset.current_filename}</span> against the baseline
                 (<span className="font-semibold">{activeDataset.baseline_filename}</span>, established {new Date(activeDataset.created_at).toLocaleDateString()})
-                {!activeDataset.has_new_version && ' — same file, so schema/drift show no change until you upload newer data'}
+                {!hasNewVersion(activeDataset) && ' — same file, so schema/drift show no change until you upload newer data'}
               </div>
 
               {/* Overall score */}
