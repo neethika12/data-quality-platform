@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from backend.config import settings
@@ -22,6 +23,7 @@ def init_db():
             baseline_stats TEXT,
             baseline_data TEXT,
             baseline_filename TEXT,
+            baseline_established_at TIMESTAMP,
             current_filename TEXT,
             current_file_uploaded_at TIMESTAMP
         )
@@ -33,11 +35,30 @@ def init_db():
     for col, coltype in [
         ("baseline_data", "TEXT"),
         ("baseline_filename", "TEXT"),
+        ("baseline_established_at", "TIMESTAMP"),
         ("current_filename", "TEXT"),
         ("current_file_uploaded_at", "TIMESTAMP"),
     ]:
         if col not in existing_cols:
             cursor.execute(f"ALTER TABLE datasets ADD COLUMN {col} {coltype}")
+
+    # Backfill baseline_established_at from created_at for any existing rows that predate it
+    cursor.execute("UPDATE datasets SET baseline_established_at = created_at WHERE baseline_established_at IS NULL")
+
+    # Baseline history — every baseline a dataset has ever had, archived when replaced
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS baseline_history (
+            id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL,
+            baseline_schema TEXT,
+            baseline_stats TEXT,
+            baseline_data TEXT,
+            baseline_filename TEXT,
+            established_at TIMESTAMP,
+            replaced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(dataset_id) REFERENCES datasets(id)
+        )
+    """)
 
     # Dataset versions table — every file uploaded AFTER the baseline, kept individually
     # so multiple versions can each be checked against the same fixed baseline.
@@ -135,16 +156,61 @@ class Database:
         conn = Database.get_connection()
         cursor = conn.cursor()
         filename = baseline_filename or name
+        now = datetime.utcnow().isoformat()
         cursor.execute("""
             INSERT OR REPLACE INTO datasets
             (id, name, description, row_count, column_count, baseline_schema, baseline_stats, baseline_data,
-             baseline_filename, current_filename, current_file_uploaded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             baseline_filename, baseline_established_at, current_filename, current_file_uploaded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (dataset_id, name, description, row_count, column_count,
               json.dumps(baseline_schema), json.dumps(baseline_stats), json.dumps(baseline_data or {}),
-              filename, filename, datetime.utcnow().isoformat()))
+              filename, now, filename, now))
         conn.commit()
         conn.close()
+
+    @staticmethod
+    def promote_version_to_baseline(dataset_id: str, baseline_schema: Dict, baseline_stats: Dict,
+                                    baseline_data: Dict, baseline_filename: str,
+                                    row_count: int, column_count: int):
+        """Archive the current baseline into history, then make the given data the new baseline."""
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,))
+        current = dict(cursor.fetchone())
+
+        # Archive the outgoing baseline
+        cursor.execute("""
+            INSERT INTO baseline_history
+            (id, dataset_id, baseline_schema, baseline_stats, baseline_data, baseline_filename, established_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (str(uuid.uuid4()), dataset_id, current["baseline_schema"], current["baseline_stats"],
+              current["baseline_data"], current["baseline_filename"], current["baseline_established_at"]))
+
+        # Install the new baseline
+        now = datetime.utcnow().isoformat()
+        cursor.execute("""
+            UPDATE datasets SET baseline_schema = ?, baseline_stats = ?, baseline_data = ?,
+                                baseline_filename = ?, baseline_established_at = ?,
+                                row_count = ?, column_count = ?
+            WHERE id = ?
+        """, (json.dumps(baseline_schema), json.dumps(baseline_stats), json.dumps(baseline_data),
+              baseline_filename, now, row_count, column_count, dataset_id))
+
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def list_baseline_history(dataset_id: str) -> List[Dict]:
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, dataset_id, baseline_filename, established_at, replaced_at
+            FROM baseline_history WHERE dataset_id = ? ORDER BY replaced_at DESC
+        """, (dataset_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
 
     @staticmethod
     def update_current_file(dataset_id: str, filename: str, row_count: int, column_count: int):

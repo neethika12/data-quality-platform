@@ -37,6 +37,9 @@ export const apiService = {
   },
   getDatasetVersions: (datasetId) => api.get(`/datasets/${datasetId}/versions`),
   deleteDatasetVersion: (datasetId, versionId) => api.delete(`/datasets/${datasetId}/versions/${versionId}`),
+  promoteVersionToBaseline: (datasetId, versionId) =>
+    api.post(`/datasets/${datasetId}/versions/${versionId}/promote`),
+  getBaselineHistory: (datasetId) => api.get(`/datasets/${datasetId}/baseline-history`),
 
   // Analysis — pass versionId to check a specific uploaded version against the baseline
   runAnalysis: (datasetId, versionId) =>

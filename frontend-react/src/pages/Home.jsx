@@ -3,7 +3,7 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Alert from '../components/Alert'
 import { apiService } from '../utils/api'
-import { Upload, RefreshCw, CheckCircle2, Trash2, ChevronDown, ChevronUp, PlusCircle } from 'lucide-react'
+import { Upload, RefreshCw, CheckCircle2, Trash2, ChevronDown, ChevronUp, PlusCircle, ArrowUpCircle, History } from 'lucide-react'
 
 export default function Home() {
   const [datasets, setDatasets] = useState([])
@@ -21,16 +21,22 @@ export default function Home() {
   const [error, setError] = useState(null)
   const [banner, setBanner] = useState(null) // { type, message }
   const [showDetails, setShowDetails] = useState(false)
+  const [promoting, setPromoting] = useState(null) // version id currently being promoted
+  const [baselineHistory, setBaselineHistory] = useState([])
+  const [showBaselineHistory, setShowBaselineHistory] = useState(false)
 
   useEffect(() => {
     loadDatasets()
   }, [])
 
   useEffect(() => {
-    if (activeId) loadVersions(activeId)
-    else {
+    if (activeId) {
+      loadVersions(activeId)
+      loadBaselineHistory(activeId)
+    } else {
       setVersions([])
       setActiveVersionId(null)
+      setBaselineHistory([])
     }
   }, [activeId])
 
@@ -76,6 +82,32 @@ export default function Home() {
       setActiveVersionId(null)
     } finally {
       setLoadingVersions(false)
+    }
+  }
+
+  const loadBaselineHistory = async (datasetId) => {
+    try {
+      const res = await apiService.getBaselineHistory(datasetId)
+      setBaselineHistory(res.data.history || [])
+    } catch (err) {
+      setBaselineHistory([])
+    }
+  }
+
+  const handlePromote = async (versionId, filename) => {
+    if (!window.confirm(`Make "${filename}" the new baseline? The current baseline will be archived to this project's baseline history, and this file will no longer appear in the versions list.`)) return
+    try {
+      setPromoting(versionId)
+      setError(null)
+      await apiService.promoteVersionToBaseline(activeId, versionId)
+      setBanner({ type: 'success', message: `"${filename}" is now the baseline. The old baseline was archived.` })
+      await loadDatasets(activeId)
+      await loadVersions(activeId)
+      await loadBaselineHistory(activeId)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not promote this version.')
+    } finally {
+      setPromoting(null)
     }
   }
 
@@ -305,7 +337,7 @@ export default function Home() {
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold tracking-wide">BASELINE</span>
                   </p>
                   <p className="text-xs text-gray-500">
-                    established {new Date(activeDataset.created_at).toLocaleString()} · the fixed reference every version is checked against
+                    established {new Date(activeDataset.baseline_established_at || activeDataset.created_at).toLocaleString()} · the fixed reference every version is checked against
                   </p>
                 </div>
               </div>
@@ -337,13 +369,23 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteVersion(v.id) }}
-                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
-                  title="Remove this version"
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handlePromote(v.id, v.filename) }}
+                    disabled={promoting === v.id}
+                    className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition disabled:opacity-50"
+                    title="Make this the new baseline"
+                  >
+                    <ArrowUpCircle size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteVersion(v.id) }}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                    title="Remove this version"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -371,6 +413,30 @@ export default function Home() {
               {analyzing ? 'Checking…' : `Run Check on "${checkedFilename}"`}
             </Button>
           </div>
+
+          {baselineHistory.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+              <button
+                onClick={() => setShowBaselineHistory(!showBaselineHistory)}
+                className="flex items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:text-primary"
+              >
+                <History size={14} />
+                {showBaselineHistory ? 'Hide' : 'Show'} baseline history ({baselineHistory.length} past baseline{baselineHistory.length !== 1 ? 's' : ''} for this project)
+              </button>
+              {showBaselineHistory && (
+                <div className="mt-3 space-y-1">
+                  {baselineHistory.map((h) => (
+                    <div key={h.id} className="text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded flex items-center justify-between">
+                      <span className="font-medium">{h.baseline_filename}</span>
+                      <span className="text-xs text-gray-500">
+                        was baseline {new Date(h.established_at).toLocaleDateString()} → {new Date(h.replaced_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
@@ -397,7 +463,7 @@ export default function Home() {
               <div className="text-xs px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                 {activeVersionId ? (
                   <>Comparing <span className="font-semibold">{checkedFilename}</span> against the baseline
-                  (<span className="font-semibold">{activeDataset.baseline_filename}</span>, established {new Date(activeDataset.created_at).toLocaleDateString()})</>
+                  (<span className="font-semibold">{activeDataset.baseline_filename}</span>, established {new Date(activeDataset.baseline_established_at || activeDataset.created_at).toLocaleDateString()})</>
                 ) : (
                   <>Checking the baseline (<span className="font-semibold">{activeDataset.baseline_filename}</span>) against itself
                   — schema/drift show no change by definition; upload another file above to check real drift</>

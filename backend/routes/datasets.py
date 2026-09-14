@@ -2,6 +2,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 from typing import List
 import uuid
 import os
+import shutil
 from backend.models import DatasetResponse
 from backend.database import Database
 from backend.utils.file_handlers import FileHandler
@@ -133,6 +134,63 @@ def delete_dataset_version(dataset_id: str, version_id: str):
 
     return {"message": f"Version {version_id} deleted"}
 
+
+@router.post("/{dataset_id}/versions/{version_id}/promote")
+def promote_version_to_baseline(dataset_id: str, version_id: str):
+    """Make an uploaded version the new baseline. The old baseline is archived into
+    this dataset's baseline history (never shared with other datasets/projects) so
+    it's never lost, and every future check compares against the new baseline."""
+    dataset = Database.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    version = Database.get_dataset_version(version_id)
+    if not version or version["dataset_id"] != dataset_id:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    try:
+        df = FileHandler.read_file(version["file_path"])
+        new_baseline_schema = SchemaValidator.extract_schema(df)
+        new_baseline_stats = {col: StatisticalTester.calculate_distribution_stats(df[col]) for col in df.columns}
+        new_baseline_data = FileHandler.dataframe_to_baseline_sample(df)
+
+        Database.promote_version_to_baseline(
+            dataset_id, new_baseline_schema, new_baseline_stats, new_baseline_data,
+            version["filename"], len(df), len(df.columns)
+        )
+
+        # Swap the physical baseline file so a plain "check baseline against itself" still works
+        old_baseline_files = [f for f in os.listdir(settings.UPLOAD_DIR)
+                             if f.startswith(f"{dataset_id}_") and os.path.isfile(os.path.join(settings.UPLOAD_DIR, f))]
+        for f in old_baseline_files:
+            os.remove(os.path.join(settings.UPLOAD_DIR, f))
+        new_baseline_path = os.path.join(settings.UPLOAD_DIR, f"{dataset_id}_{version['filename']}")
+        shutil.copy(version["file_path"], new_baseline_path)
+
+        # The promoted version is now the baseline, not something to check against it anymore
+        Database.delete_dataset_version(version_id)
+
+        return {
+            "dataset_id": dataset_id,
+            "new_baseline_filename": version["filename"],
+            "message": "Baseline updated. The old baseline was archived to this project's baseline history."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{dataset_id}/baseline-history")
+def get_baseline_history(dataset_id: str):
+    """List every baseline this dataset has ever had (most recently replaced first).
+    Scoped strictly to this one dataset — never mixed with any other project's history."""
+    dataset = Database.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    history = Database.list_baseline_history(dataset_id)
+    return {"count": len(history), "history": history}
+
 @router.get("/{dataset_id}")
 def get_dataset(dataset_id: str):
     """Get dataset information."""
@@ -149,6 +207,7 @@ def get_dataset(dataset_id: str):
         "created_at": dataset["created_at"],
         "last_analyzed": dataset["last_analyzed"],
         "baseline_filename": dataset["baseline_filename"],
+        "baseline_established_at": dataset["baseline_established_at"],
         "current_filename": dataset["current_filename"],
         "current_file_uploaded_at": dataset["current_file_uploaded_at"],
         "has_new_version": dataset["current_filename"] != dataset["baseline_filename"]
