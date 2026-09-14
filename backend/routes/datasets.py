@@ -86,8 +86,8 @@ async def upload_new_version(dataset_id: str, file: UploadFile = File(...)):
 
         df = FileHandler.read_file(file_path)
 
-        # Update row/column counts only — baseline stays as the original reference point
-        Database.update_dataset_file_info(dataset_id, len(df), len(df.columns))
+        # Record the new "current" file — baseline stays as the original reference point
+        Database.update_current_file(dataset_id, file.filename, len(df), len(df.columns))
 
         return {
             "dataset_id": dataset_id,
@@ -116,7 +116,11 @@ def get_dataset(dataset_id: str):
         "row_count": dataset["row_count"],
         "column_count": dataset["column_count"],
         "created_at": dataset["created_at"],
-        "last_analyzed": dataset["last_analyzed"]
+        "last_analyzed": dataset["last_analyzed"],
+        "baseline_filename": dataset["baseline_filename"],
+        "current_filename": dataset["current_filename"],
+        "current_file_uploaded_at": dataset["current_file_uploaded_at"],
+        "has_new_version": dataset["current_filename"] != dataset["baseline_filename"]
     }
 
 @router.get("")

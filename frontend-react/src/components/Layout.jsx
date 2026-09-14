@@ -20,6 +20,7 @@ export default function Layout({ children, darkMode, setDarkMode }) {
 
   const navItems = [
     { path: '/', label: 'Home', icon: '🏠', tour: 'nav-home' },
+    { path: '/compare', label: 'Compare', icon: '⚖️', tour: 'nav-compare' },
     { path: '/alerts', label: 'Alerts', icon: '🔔', tour: 'nav-alerts' },
     { path: '/reports', label: 'Reports', icon: '📄', tour: 'nav-reports' },
     { path: '/configuration', label: 'Settings', icon: '⚙️', tour: 'nav-settings' },

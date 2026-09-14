@@ -145,9 +145,10 @@ export default function Home() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-3xl font-bold mb-1">Welcome 👋</h1>
+        <h1 className="text-3xl font-bold mb-1">Track One Dataset Over Time 🔁</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Upload a data file below, then run a check to see how healthy your data is.
+          Upload a file to lock in a baseline, then check it again over time to catch drift and changes.
+          Want to compare two files directly instead? Go to <span className="font-semibold text-primary">Compare</span> in the sidebar.
         </p>
       </div>
 
@@ -213,8 +214,17 @@ export default function Home() {
                   <div>
                     <p className="font-semibold text-gray-900 dark:text-white">{ds.name}</p>
                     <p className="text-xs text-gray-500">
-                      {ds.row_count?.toLocaleString()} rows · {ds.column_count} columns · uploaded {new Date(ds.created_at).toLocaleDateString()}
+                      {ds.row_count?.toLocaleString()} rows · {ds.column_count} columns · baseline established {new Date(ds.created_at).toLocaleDateString()}
                     </p>
+                    {ds.has_new_version ? (
+                      <p className="text-xs text-primary font-medium mt-0.5">
+                        → Currently checking new data: {ds.current_filename} (uploaded {new Date(ds.current_file_uploaded_at).toLocaleString()})
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        No new data uploaded yet — a check right now compares this file against itself
+                      </p>
+                    )}
                   </div>
                 </div>
                 <button
@@ -245,7 +255,7 @@ export default function Home() {
                 className="inline-flex items-center gap-2 text-sm text-primary hover:underline cursor-pointer"
               >
                 <RotateCw size={14} />
-                {uploadingVersion ? 'Uploading…' : "Got newer data for this file? Upload it to check for drift"}
+                {uploadingVersion ? 'Uploading…' : 'Upload newer data to replace the current file (baseline stays locked)'}
               </label>
             </div>
             <Button onClick={handleRunCheck} disabled={analyzing}>
@@ -275,6 +285,13 @@ export default function Home() {
           </p>
         ) : (
             <div className="space-y-6">
+              {/* Which files this result actually compares */}
+              <div className="text-xs px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                Comparing <span className="font-semibold">{activeDataset.current_filename}</span> against the baseline
+                (<span className="font-semibold">{activeDataset.baseline_filename}</span>, established {new Date(activeDataset.created_at).toLocaleDateString()})
+                {!activeDataset.has_new_version && ' — same file, so schema/drift show no change until you upload newer data'}
+              </div>
+
               {/* Overall score */}
               <div
                 className="flex items-center gap-6 p-5 rounded-lg"

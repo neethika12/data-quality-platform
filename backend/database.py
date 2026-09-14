@@ -20,15 +20,24 @@ def init_db():
             last_analyzed TIMESTAMP,
             baseline_schema TEXT,
             baseline_stats TEXT,
-            baseline_data TEXT
+            baseline_data TEXT,
+            baseline_filename TEXT,
+            current_filename TEXT,
+            current_file_uploaded_at TIMESTAMP
         )
     """)
 
-    # Migration: add baseline_data to pre-existing databases that predate this column
+    # Migration: add columns to pre-existing databases that predate them
     cursor.execute("PRAGMA table_info(datasets)")
     existing_cols = {row[1] for row in cursor.fetchall()}
-    if "baseline_data" not in existing_cols:
-        cursor.execute("ALTER TABLE datasets ADD COLUMN baseline_data TEXT")
+    for col, coltype in [
+        ("baseline_data", "TEXT"),
+        ("baseline_filename", "TEXT"),
+        ("current_filename", "TEXT"),
+        ("current_file_uploaded_at", "TIMESTAMP"),
+    ]:
+        if col not in existing_cols:
+            cursor.execute(f"ALTER TABLE datasets ADD COLUMN {col} {coltype}")
 
     # Quality results table
     cursor.execute("""
@@ -100,15 +109,31 @@ class Database:
     @staticmethod
     def store_dataset(dataset_id: str, name: str, description: str,
                      row_count: int, column_count: int, baseline_schema: Dict, baseline_stats: Dict,
-                     baseline_data: Optional[Dict] = None):
+                     baseline_data: Optional[Dict] = None, baseline_filename: Optional[str] = None):
+        conn = Database.get_connection()
+        cursor = conn.cursor()
+        filename = baseline_filename or name
+        cursor.execute("""
+            INSERT OR REPLACE INTO datasets
+            (id, name, description, row_count, column_count, baseline_schema, baseline_stats, baseline_data,
+             baseline_filename, current_filename, current_file_uploaded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (dataset_id, name, description, row_count, column_count,
+              json.dumps(baseline_schema), json.dumps(baseline_stats), json.dumps(baseline_data or {}),
+              filename, filename, datetime.utcnow().isoformat()))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def update_current_file(dataset_id: str, filename: str, row_count: int, column_count: int):
+        """Record that a new 'current' file version was uploaded for this dataset, without touching the baseline."""
         conn = Database.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT OR REPLACE INTO datasets
-            (id, name, description, row_count, column_count, baseline_schema, baseline_stats, baseline_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (dataset_id, name, description, row_count, column_count,
-              json.dumps(baseline_schema), json.dumps(baseline_stats), json.dumps(baseline_data or {})))
+            UPDATE datasets SET current_filename = ?, current_file_uploaded_at = ?,
+                                row_count = ?, column_count = ?
+            WHERE id = ?
+        """, (filename, datetime.utcnow().isoformat(), row_count, column_count, dataset_id))
         conn.commit()
         conn.close()
 
@@ -125,16 +150,6 @@ class Database:
         conn.commit()
         conn.close()
 
-    @staticmethod
-    def update_dataset_file_info(dataset_id: str, row_count: int, column_count: int):
-        """Update row/column counts after a new file version is uploaded, without touching the baseline."""
-        conn = Database.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE datasets SET row_count = ?, column_count = ? WHERE id = ?
-        """, (row_count, column_count, dataset_id))
-        conn.commit()
-        conn.close()
 
     @staticmethod
     def get_dataset(dataset_id: str) -> Optional[Dict]:

@@ -50,6 +50,16 @@ export const apiService = {
   getReport: (datasetId, format = 'text') =>
     api.get(`/datasets/${datasetId}/report`, { params: { format } }),
 
+  // Compare two independent files directly (no persisted baseline)
+  compareFiles: (fileA, fileB) => {
+    const formData = new FormData()
+    formData.append('file_a', fileA)
+    formData.append('file_b', fileB)
+    return api.post('/compare', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
   // Health
   getHealth: () => api.get('/health'),
 }

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
 from backend.database import init_db
-from backend.routes import datasets, analysis, results, alerts, export, reports
+from backend.routes import datasets, analysis, results, alerts, export, reports, comparison
 
 # Initialize database
 init_db()
@@ -30,6 +30,7 @@ app.include_router(results.router)
 app.include_router(alerts.router)
 app.include_router(export.router)
 app.include_router(reports.router)
+app.include_router(comparison.router)
 
 @app.get("/")
 def read_root():
